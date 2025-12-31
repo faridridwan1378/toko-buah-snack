@@ -1,0 +1,2289 @@
+<!DOCTYPE html>
+<html lang="id" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="description" content="Toko online buah & makanan ringan — mobile-first, checkout via WhatsApp, status order realtime (opsional Firebase/Cloudflare)." />
+  <title>Toko Buah & Snack</title>
+
+  <!-- Tailwind CSS (Browser) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+
+  <!-- Optional Firebase (only used if configured in Settings) -->
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+  <style>
+    :root {
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-top: env(safe-area-inset-top, 0px);
+    }
+
+    /* Smooth but respectful motion */
+    @media (prefers-reduced-motion: reduce) {
+      * { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+    }
+
+    .glass {
+      background: color-mix(in oklab, rgba(255,255,255,.10), transparent 35%);
+      border: 1px solid rgba(255,255,255,.14);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    .glass-strong {
+      background: color-mix(in oklab, rgba(255,255,255,.14), transparent 20%);
+      border: 1px solid rgba(255,255,255,.18);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .shadow-soft {
+      box-shadow: 0 16px 50px rgba(0,0,0,.35);
+    }
+
+    .tap {
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .hide-scrollbar::-webkit-scrollbar { width: 0; height: 0; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    .skeleton {
+      background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.12), rgba(255,255,255,.06));
+      background-size: 200% 100%;
+      animation: shimmer 1.05s linear infinite;
+    }
+    @keyframes shimmer { 0% { background-position: 0% 0; } 100% { background-position: -200% 0; } }
+
+    .lift {
+      transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+    }
+    .lift:active {
+      transform: translateY(1px) scale(.99);
+      filter: brightness(1.03);
+    }
+
+    .badge {
+      background: color-mix(in oklab, rgba(255,255,255,.14), transparent 25%);
+      border: 1px solid rgba(255,255,255,.16);
+    }
+
+    .ring-glow {
+      box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 0 0 6px rgba(99,102,241,.10);
+    }
+
+    /* Mobile bottom bar safe-area */
+    .bottom-safe { padding-bottom: calc(12px + var(--safe-bottom)); }
+    .top-safe { padding-top: calc(10px + var(--safe-top)); }
+
+    /* Clamp multiline */
+    .lineclamp-2 {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+  </style>
+</head>
+
+<body class="h-full bg-slate-950 text-slate-100 selection:bg-indigo-500/40">
+  <div id="app" class="min-h-full">
+    <!-- Background -->
+    <div class="fixed inset-0 -z-10 overflow-hidden">
+      <div class="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-indigo-500/25 blur-3xl"></div>
+      <div class="absolute top-24 -right-24 h-80 w-80 rounded-full bg-emerald-500/20 blur-3xl"></div>
+      <div class="absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-fuchsia-500/15 blur-3xl"></div>
+      <div class="absolute inset-0 bg-gradient-to-b from-slate-950 via-slate-950 to-slate-950/95"></div>
+    </div>
+
+    <!-- Header -->
+    <header class="sticky top-0 z-30 top-safe">
+      <div class="mx-auto max-w-md px-4">
+        <div class="glass-strong shadow-soft rounded-2xl px-3 py-3">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-emerald-400 grid place-items-center shadow-soft">
+                  <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 11c1.7 0 3-1.3 3-3s-1.3-3-3-3c-1.1 0-2 .4-2.6 1.1C12.8 5.4 11.9 5 11 5c-1.7 0-3 1.3-3 3s1.3 3 3 3" />
+                    <path d="M8 11c-1.7 0-3 1.3-3 3s1.3 3 3 3c1.1 0 2-.4 2.6-1.1.6.7 1.5 1.1 2.4 1.1 1.7 0 3-1.3 3-3" />
+                    <path d="M12 2v3" />
+                    <path d="M12 19v3" />
+                  </svg>
+                </div>
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold leading-tight truncate">Toko Buah & Snack</div>
+                  <div class="text-xs text-slate-300/90 leading-tight">
+                    <span id="syncDot" class="inline-block h-2 w-2 rounded-full bg-slate-400/60 align-middle"></span>
+                    <span id="syncText" class="ml-1 align-middle">Mode lokal</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button id="btnSettings" class="tap lift rounded-xl px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10">
+                <span class="sr-only">Pengaturan</span>
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z" />
+                  <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.05.05a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.05-.05A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .31 1.7 1.7 0 0 0-.7 1.37V21a2 2 0 0 1-4 0v-.07a1.7 1.7 0 0 0-.7-1.37 1.7 1.7 0 0 0-1-.31 1.7 1.7 0 0 0-1.87.34l-.05.05a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.05-.05A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.31-1 1.7 1.7 0 0 0-1.37-.7H2.9a2 2 0 0 1 0-4h.07a1.7 1.7 0 0 0 1.37-.7 1.7 1.7 0 0 0 .31-1 1.7 1.7 0 0 0-.34-1.87l-.05-.05a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.05.05A1.7 1.7 0 0 0 9 4.6c.3 0 .66-.1 1-.31.42-.27.7-.73.7-1.37V2.9a2 2 0 0 1 4 0v.07c0 .64.28 1.1.7 1.37.34.21.7.31 1 .31a1.7 1.7 0 0 0 1.87-.34l.05-.05a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.05.05A1.7 1.7 0 0 0 19.4 9c0 .3.1.66.31 1 .27.42.73.7 1.37.7h.07a2 2 0 0 1 0 4h-.07c-.64 0-1.1.28-1.37.7-.21.34-.31.7-.31 1z" />
+                </svg>
+              </button>
+              <button id="btnSearch" class="tap lift rounded-xl px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10">
+                <span class="sr-only">Cari</span>
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div id="searchRow" class="mt-3 hidden">
+            <div class="flex gap-2">
+              <div class="flex-1">
+                <label class="sr-only" for="inpSearch">Cari produk</label>
+                <input id="inpSearch" inputmode="search" placeholder="Cari buah / snack…" class="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+              </div>
+              <button id="btnClearSearch" class="tap lift rounded-xl px-4 py-3 bg-white/5 border border-white/10 text-sm">Bersihkan</button>
+            </div>
+          </div>
+
+          <div class="mt-3 flex gap-2 overflow-x-auto hide-scrollbar pb-1">
+            <button data-cat="all" class="catBtn tap lift whitespace-nowrap px-4 py-2 rounded-full badge text-xs font-medium ring-1 ring-white/5">Semua</button>
+            <button data-cat="fruit" class="catBtn tap lift whitespace-nowrap px-4 py-2 rounded-full bg-emerald-500/15 border border-emerald-300/20 text-xs font-medium">Buah</button>
+            <button data-cat="snack" class="catBtn tap lift whitespace-nowrap px-4 py-2 rounded-full bg-amber-500/15 border border-amber-300/20 text-xs font-medium">Makanan Ringan</button>
+            <button data-cat="promo" class="catBtn tap lift whitespace-nowrap px-4 py-2 rounded-full bg-fuchsia-500/15 border border-fuchsia-300/20 text-xs font-medium">Promo</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main -->
+    <main class="mx-auto max-w-md px-4 pb-28 bottom-safe">
+      <!-- HOME -->
+      <section id="viewHome" class="pt-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h1 class="text-lg font-semibold tracking-tight">Produk hari ini</h1>
+            <p class="text-xs text-slate-300/90">Tambah ke keranjang, lalu konfirmasi via WhatsApp.</p>
+          </div>
+          <button id="btnRefresh" class="tap lift rounded-xl px-4 py-3 bg-indigo-500/20 border border-indigo-300/20">
+            <div class="flex items-center gap-2">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                <path d="M21 3v6h-6" />
+              </svg>
+              <span class="text-sm font-medium">Sync</span>
+            </div>
+          </button>
+        </div>
+
+        <div id="homeNotice" class="mt-3 hidden glass rounded-2xl p-4 border border-white/10">
+          <div class="text-sm font-semibold">Mode demo (lokal)</div>
+          <div class="mt-1 text-xs text-slate-300/90">Aplikasi tetap berjalan tanpa backend. Untuk realtime produk & status order: buka <span class="font-semibold">Pengaturan → Sinkronisasi</span>.</div>
+        </div>
+
+        <div id="productGrid" class="mt-4 grid grid-cols-2 gap-3"></div>
+        <div id="productEmpty" class="mt-6 hidden">
+          <div class="glass rounded-2xl p-5 border border-white/10">
+            <div class="text-sm font-semibold">Tidak ada produk</div>
+            <div class="text-xs text-slate-300/90 mt-1">Coba ganti kategori atau bersihkan pencarian.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- CART -->
+      <section id="viewCart" class="pt-4 hidden">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-semibold">Keranjang</h2>
+            <p class="text-xs text-slate-300/90">Ubah jumlah lalu checkout.</p>
+          </div>
+          <button id="btnClearCart" class="tap lift rounded-xl px-4 py-3 bg-white/5 border border-white/10 text-sm">Kosongkan</button>
+        </div>
+
+        <div id="cartList" class="mt-4 space-y-3"></div>
+
+        <div id="cartEmpty" class="mt-6 hidden">
+          <div class="glass rounded-2xl p-5 border border-white/10">
+            <div class="text-sm font-semibold">Keranjang kosong</div>
+            <div class="text-xs text-slate-300/90 mt-1">Tambahkan produk dari beranda.</div>
+          </div>
+        </div>
+
+        <div class="mt-5 glass-strong rounded-2xl p-4 border border-white/10">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-xs text-slate-300/90">Total</div>
+              <div id="cartTotal" class="text-xl font-semibold">Rp0</div>
+            </div>
+            <button id="btnCheckout" class="tap lift rounded-2xl px-5 py-4 bg-gradient-to-br from-indigo-500 to-emerald-400 text-slate-950 font-semibold">
+              Checkout
+            </button>
+          </div>
+          <div class="mt-2 text-[11px] text-slate-300/90">
+            Checkout akan membuat order, lalu membuka WhatsApp untuk konfirmasi.
+          </div>
+        </div>
+      </section>
+
+      <!-- ORDERS -->
+      <section id="viewOrders" class="pt-4 hidden">
+        <div>
+          <h2 class="text-lg font-semibold">Status Pesanan</h2>
+          <p class="text-xs text-slate-300/90">Masukkan nomor HP untuk melihat riwayat order.</p>
+        </div>
+
+        <div class="mt-4 glass rounded-2xl p-4 border border-white/10">
+          <label class="text-xs text-slate-300/90" for="inpTrackPhone">Nomor WhatsApp</label>
+          <div class="mt-2 flex gap-2">
+            <input id="inpTrackPhone" inputmode="tel" placeholder="Contoh: 0812xxxx" class="flex-1 rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+            <button id="btnTrack" class="tap lift rounded-xl px-4 py-3 bg-indigo-500/20 border border-indigo-300/20 text-sm font-medium">Lihat</button>
+          </div>
+          <div class="mt-2 text-[11px] text-slate-300/90">Tip: gunakan nomor yang sama saat checkout.</div>
+        </div>
+
+        <div id="ordersList" class="mt-4 space-y-3"></div>
+        <div id="ordersEmpty" class="mt-6 hidden">
+          <div class="glass rounded-2xl p-5 border border-white/10">
+            <div class="text-sm font-semibold">Belum ada order</div>
+            <div class="text-xs text-slate-300/90 mt-1">Buat order dari menu Keranjang.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ADMIN -->
+      <section id="viewAdmin" class="pt-4 hidden">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-semibold">Admin</h2>
+            <p class="text-xs text-slate-300/90">Kelola produk & status order.</p>
+          </div>
+          <button id="btnAdminLock" class="tap lift rounded-xl px-4 py-3 bg-white/5 border border-white/10 text-sm">Kunci</button>
+        </div>
+
+        <div id="adminLocked" class="mt-4 glass rounded-2xl p-4 border border-white/10">
+          <div class="text-sm font-semibold">Masuk Admin</div>
+          <div class="text-xs text-slate-300/90 mt-1">Untuk demo, gunakan PIN lokal. Untuk produksi, aktifkan Firebase Auth + custom claims admin.</div>
+          <div class="mt-3 flex gap-2">
+            <input id="inpAdminPin" inputmode="numeric" placeholder="PIN admin" class="flex-1 rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+            <button id="btnAdminUnlock" class="tap lift rounded-xl px-4 py-3 bg-indigo-500/20 border border-indigo-300/20 text-sm font-medium">Masuk</button>
+          </div>
+          <div class="mt-2 text-[11px] text-slate-300/90">PIN default demo: <span class="font-semibold">1234</span> (ubah di Pengaturan).</div>
+        </div>
+
+        <div id="adminPanel" class="mt-4 hidden">
+          <div class="glass-strong rounded-2xl p-4 border border-white/10">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="text-sm font-semibold">Produk</div>
+                <div class="text-xs text-slate-300/90">Tambah / edit cepat, cocok untuk update rutin gambar & stok.</div>
+              </div>
+              <div class="flex gap-2">
+                <button id="btnAdminMaintain" class="tap lift rounded-xl px-4 py-3 bg-white/5 border border-white/10 text-sm font-medium">Maintain</button>
+                <button id="btnAddProduct" class="tap lift rounded-xl px-4 py-3 bg-emerald-500/20 border border-emerald-300/20 text-sm font-medium">+ Produk</button>
+              </div>
+            </div>
+            <div id="adminMaintainBar" class="mt-3 hidden">
+              <div class="glass rounded-2xl p-3 border border-white/10">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-xs text-slate-300/90">
+                    Mode pilih: <span id="adminSelCount" class="font-semibold text-slate-100">0</span> terpilih
+                  </div>
+                  <button id="btnAdminExitMaintain" class="tap lift rounded-xl px-3 py-2 bg-white/5 border border-white/10 text-xs font-semibold">Selesai</button>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <button id="btnAdminSelectAll" class="tap lift rounded-xl px-3 py-2 bg-white/5 border border-white/10 text-xs font-semibold">Pilih semua</button>
+                  <button id="btnAdminClearSel" class="tap lift rounded-xl px-3 py-2 bg-white/5 border border-white/10 text-xs font-semibold">Kosongkan</button>
+                  <button id="btnAdminBulkDuplicate" class="tap lift rounded-xl px-3 py-2 bg-indigo-500/20 border border-indigo-300/20 text-xs font-semibold">Duplikat</button>
+                  <button id="btnAdminBulkDelete" class="tap lift rounded-xl px-3 py-2 bg-rose-500/20 border border-rose-300/20 text-xs font-semibold">Hapus</button>
+                </div>
+                <div class="mt-2 text-[11px] text-slate-300/90">Tip: pilih banyak produk untuk update rutin (hapus/duplikat). Duplikat akan membuat ID baru.</div>
+              </div>
+            </div>
+            <div id="adminProducts" class="mt-4 space-y-3"></div>
+          </div>
+
+          <div class="mt-4 glass-strong rounded-2xl p-4 border border-white/10">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="text-sm font-semibold">Order</div>
+                <div class="text-xs text-slate-300/90">Update status agar pembeli bisa memantau.</div>
+              </div>
+              <button id="btnAdminReloadOrders" class="tap lift rounded-xl px-4 py-3 bg-indigo-500/20 border border-indigo-300/20 text-sm font-medium">Muat</button>
+            </div>
+            <div id="adminOrders" class="mt-4 space-y-3"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Help / Deploy note -->
+      <section id="viewHelp" class="pt-4 hidden">
+        <div class="glass rounded-2xl p-5 border border-white/10">
+          <h2 class="text-lg font-semibold">Panduan Singkat</h2>
+          <div class="mt-3 space-y-3 text-sm text-slate-200">
+            <div>
+              <div class="font-semibold">1) Checkout via WhatsApp</div>
+              <div class="text-xs text-slate-300/90">Set nomor WA toko di Pengaturan. Saat checkout, aplikasi membuat order dan membuka WA dengan ringkasan.</div>
+            </div>
+            <div>
+              <div class="font-semibold">2) Update produk cepat</div>
+              <div class="text-xs text-slate-300/90">Admin dapat mengubah nama, harga, stok, kategori, dan URL gambar (Google Drive/URL biasa).</div>
+            </div>
+            <div>
+              <div class="font-semibold">3) Sinkronisasi stabil & secure (opsional)</div>
+              <ul class="mt-2 list-disc pl-5 text-xs text-slate-300/90 space-y-1">
+                <li><span class="font-semibold">Firebase</span>: Firestore realtime untuk produk & order + Firebase Auth untuk admin.</li>
+                <li><span class="font-semibold">Cloudflare</span>: gunakan Worker API sebagai gateway + token; cocok untuk validasi server-side dan rate limiting.</li>
+                <li>Aplikasi ini memakai cache lokal (offline-first) dan retry backoff saat sync.</li>
+              </ul>
+            </div>
+            <div>
+              <div class="font-semibold">4) Deploy Frontend ke GitHub Pages</div>
+              <div class="text-xs text-slate-300/90">Upload <code class="px-1 py-0.5 rounded bg-white/10">index.html</code> ke repo, aktifkan Pages (branch main/root).</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Nav -->
+    <nav class="fixed bottom-0 left-0 right-0 z-40 bottom-safe">
+      <div class="mx-auto max-w-md px-4">
+        <div class="glass-strong shadow-soft rounded-2xl border border-white/10 px-2 py-2">
+          <div class="grid grid-cols-5 gap-1">
+            <button data-route="home" class="navBtn tap lift rounded-2xl px-2 py-3 text-xs text-slate-200">
+              <div class="grid place-items-center gap-1">
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 9.5 12 3l9 6.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z" />
+                </svg>
+                <div>Home</div>
+              </div>
+            </button>
+            <button data-route="cart" class="navBtn tap lift rounded-2xl px-2 py-3 text-xs text-slate-200 relative">
+              <div class="grid place-items-center gap-1">
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M6 6h15l-1.5 9h-12z" />
+                  <path d="M6 6 5 3H2" />
+                  <path d="M9 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" />
+                  <path d="M18 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" />
+                </svg>
+                <div>Keranjang</div>
+              </div>
+              <div id="cartBadge" class="hidden absolute top-2 right-3 h-5 min-w-5 px-1.5 rounded-full bg-indigo-500 text-slate-950 text-[11px] font-bold grid place-items-center">0</div>
+            </button>
+            <button data-route="orders" class="navBtn tap lift rounded-2xl px-2 py-3 text-xs text-slate-200">
+              <div class="grid place-items-center gap-1">
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 6h13" />
+                  <path d="M8 12h13" />
+                  <path d="M8 18h13" />
+                  <path d="M3 6h.01" />
+                  <path d="M3 12h.01" />
+                  <path d="M3 18h.01" />
+                </svg>
+                <div>Status</div>
+              </div>
+            </button>
+            <button data-route="admin" class="navBtn tap lift rounded-2xl px-2 py-3 text-xs text-slate-200">
+              <div class="grid place-items-center gap-1">
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
+                  <path d="M20 21a8 8 0 0 0-16 0" />
+                </svg>
+                <div>Admin</div>
+              </div>
+            </button>
+            <button data-route="help" class="navBtn tap lift rounded-2xl px-2 py-3 text-xs text-slate-200">
+              <div class="grid place-items-center gap-1">
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2-3 4" />
+                  <path d="M12 17h.01" />
+                  <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+                <div>Info</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Modals -->
+    <div id="modalOverlay" class="fixed inset-0 z-50 hidden">
+      <div class="absolute inset-0 bg-black/55" data-close="overlay"></div>
+      <div class="absolute inset-x-0 bottom-0 mx-auto max-w-md px-4 pb-[calc(12px+var(--safe-bottom))]">
+        <div id="modal" class="glass-strong shadow-soft rounded-3xl border border-white/10 overflow-hidden">
+          <div class="flex items-center justify-between px-5 py-4 border-b border-white/10">
+            <div class="min-w-0">
+              <div id="modalTitle" class="font-semibold truncate">Modal</div>
+              <div id="modalSubtitle" class="text-xs text-slate-300/90 truncate"></div>
+            </div>
+            <button class="tap lift rounded-xl px-3 py-2 bg-white/5 border border-white/10" data-close="x">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            </button>
+          </div>
+          <div id="modalBody" class="px-5 py-4"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed left-0 right-0 z-[60] hidden" style="bottom: calc(84px + var(--safe-bottom));">
+      <div class="mx-auto max-w-md px-4">
+        <div class="glass-strong shadow-soft rounded-2xl border border-white/10 px-4 py-3">
+          <div id="toastText" class="text-sm"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /*
+      Single-file SPA: mobile-first online shop.
+      Backend options:
+      - Local (default)
+      - Firebase Firestore (realtime)
+      - Cloudflare Worker API (REST)
+
+      Image strategy:
+      - Works with normal URLs
+      - Supports Google Drive shared links / fileId → direct view: https://drive.google.com/uc?export=view&id=FILEID
+
+      Security notes (production):
+      - Admin actions should be protected server-side (Firebase Security Rules or Cloudflare Worker auth + allowlist).
+      - Avoid storing admin PIN in plaintext; use Firebase Auth + custom claims.
+    */
+
+    const $ = (sel, root=document) => root.querySelector(sel);
+    const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+    const LS_KEYS = {
+      products: 'shop_v1_products',
+      cart: 'shop_v1_cart',
+      orders: 'shop_v1_orders',
+      settings: 'shop_v1_settings',
+      admin: 'shop_v1_admin'
+    };
+
+    const defaultSettings = {
+      shopName: 'Toko Buah & Snack',
+      waNumber: '6281234567890', // format internasional tanpa +
+      currency: 'IDR',
+      locale: 'id-ID',
+      adminPin: '1234',
+      syncMode: 'local', // local | firebase | cloudflare
+      firebaseConfig: '', // JSON string
+      firestoreCollections: { products: 'products', orders: 'orders' },
+      cloudflare: { endpoint: '', token: '' },
+      theme: 'dark'
+    };
+
+    const store = {
+      route: 'home',
+      category: 'all',
+      query: '',
+      products: [],
+      cart: {},
+      orders: [],
+      adminUnlocked: false,
+      adminSelectMode: false,
+      adminSelected: {},
+      settings: { ...defaultSettings },
+      backend: {
+        ready: false,
+        type: 'local',
+        fb: { app: null, db: null, auth: null, unsubProducts: null, unsubOrders: null },
+      },
+      net: { online: navigator.onLine }
+    };
+
+    // ---------- Utilities ----------
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+    function nowIso(){ return new Date().toISOString(); }
+
+    function normalizePhone(input){
+      const raw = String(input || '').trim();
+      if (!raw) return '';
+      // Keep digits only
+      let digits = raw.replace(/\D+/g, '');
+      // Convert leading 0 to 62 (Indonesia)
+      if (digits.startsWith('0')) digits = '62' + digits.slice(1);
+      // If starts with 8, assume 62
+      if (digits.startsWith('8')) digits = '62' + digits;
+      return digits;
+    }
+
+    function rupiah(amount){
+      const num = Number(amount || 0);
+      try {
+        return new Intl.NumberFormat(store.settings.locale, { style: 'currency', currency: store.settings.currency, maximumFractionDigits: 0 }).format(num);
+      } catch {
+        return 'Rp' + num.toLocaleString('id-ID');
+      }
+    }
+
+    function uid(prefix='ID'){
+      const r = Math.random().toString(36).slice(2, 8).toUpperCase();
+      const t = Date.now().toString(36).toUpperCase();
+      return `${prefix}-${t}-${r}`;
+    }
+
+    function safeJsonParse(str, fallback){
+      try { return JSON.parse(str); } catch { return fallback; }
+    }
+
+    function toast(msg, ms=2200){
+      $('#toastText').textContent = msg;
+      const t = $('#toast');
+      t.classList.remove('hidden');
+      t.style.opacity = '0';
+      requestAnimationFrame(() => {
+        t.style.transition = 'opacity .18s ease';
+        t.style.opacity = '1';
+      });
+      window.clearTimeout(toast._to);
+      toast._to = window.setTimeout(() => {
+        t.style.opacity = '0';
+        window.setTimeout(() => t.classList.add('hidden'), 220);
+      }, ms);
+    }
+
+    function driveToDirect(urlOrId){
+      const s = String(urlOrId || '').trim();
+      if (!s) return '';
+      // if it's only an id
+      if (/^[a-zA-Z0-9_-]{10,}$/.test(s) && !s.includes('http')) {
+        return `https://drive.google.com/uc?export=view&id=${s}`;
+      }
+      // shared link patterns
+      const m1 = s.match(/\/file\/d\/([^/]+)/);
+      const m2 = s.match(/[?&]id=([^&]+)/);
+      const id = (m1 && m1[1]) || (m2 && m2[1]);
+      if (id) return `https://drive.google.com/uc?export=view&id=${id}`;
+      return s;
+    }
+
+    function statusMeta(status){
+      const s = (status || 'menunggu').toLowerCase();
+      if (['menunggu','pending'].includes(s)) return { label: 'Menunggu Konfirmasi', color: 'bg-amber-500/20 border-amber-300/20 text-amber-100' };
+      if (['diproses','processing'].includes(s)) return { label: 'Diproses', color: 'bg-indigo-500/20 border-indigo-300/20 text-indigo-100' };
+      if (['dikirim','shipping','diantar'].includes(s)) return { label: 'Dikirim/Diantar', color: 'bg-emerald-500/20 border-emerald-300/20 text-emerald-100' };
+      if (['selesai','done','completed'].includes(s)) return { label: 'Selesai', color: 'bg-slate-200/10 border-white/10 text-slate-100' };
+      if (['batal','cancelled'].includes(s)) return { label: 'Dibatalkan', color: 'bg-rose-500/20 border-rose-300/20 text-rose-100' };
+      return { label: status || 'Menunggu', color: 'bg-slate-200/10 border-white/10 text-slate-100' };
+    }
+
+    function setSyncIndicator(mode, online=true){
+      const dot = $('#syncDot');
+      const text = $('#syncText');
+      const m = mode || 'local';
+      if (!online) {
+        dot.className = 'inline-block h-2 w-2 rounded-full bg-rose-400 align-middle';
+        text.textContent = 'Offline (cache)';
+        return;
+      }
+      if (m === 'firebase') {
+        dot.className = 'inline-block h-2 w-2 rounded-full bg-emerald-400 align-middle';
+        text.textContent = 'Realtime Firebase';
+      } else if (m === 'cloudflare') {
+        dot.className = 'inline-block h-2 w-2 rounded-full bg-indigo-400 align-middle';
+        text.textContent = 'Cloudflare API';
+      } else {
+        dot.className = 'inline-block h-2 w-2 rounded-full bg-slate-400/60 align-middle';
+        text.textContent = 'Mode lokal';
+      }
+    }
+
+    // ---------- Persistence ----------
+    function loadAll(){
+      const savedSettings = safeJsonParse(localStorage.getItem(LS_KEYS.settings), null);
+      store.settings = { ...defaultSettings, ...(savedSettings || {}) };
+      store.backend.type = store.settings.syncMode;
+
+      store.products = safeJsonParse(localStorage.getItem(LS_KEYS.products), null) || seedProducts();
+      store.cart = safeJsonParse(localStorage.getItem(LS_KEYS.cart), null) || {};
+      store.orders = safeJsonParse(localStorage.getItem(LS_KEYS.orders), null) || [];
+
+      const admin = safeJsonParse(localStorage.getItem(LS_KEYS.admin), null) || { unlocked: false };
+      store.adminUnlocked = !!admin.unlocked;
+
+      $('#homeNotice').classList.toggle('hidden', store.settings.syncMode !== 'local');
+      setSyncIndicator(store.settings.syncMode, store.net.online);
+    }
+
+    function save(key){
+      if (key === 'settings') localStorage.setItem(LS_KEYS.settings, JSON.stringify(store.settings));
+      if (key === 'products') localStorage.setItem(LS_KEYS.products, JSON.stringify(store.products));
+      if (key === 'cart') localStorage.setItem(LS_KEYS.cart, JSON.stringify(store.cart));
+      if (key === 'orders') localStorage.setItem(LS_KEYS.orders, JSON.stringify(store.orders));
+      if (key === 'admin') localStorage.setItem(LS_KEYS.admin, JSON.stringify({ unlocked: store.adminUnlocked }));
+    }
+
+    function seedProducts(){
+      return [
+        {
+          id: 'P-FRU-APL',
+          name: 'Apel Fuji Premium',
+          category: 'fruit',
+          price: 28000,
+          unit: 'kg',
+          stock: 18,
+          promo: true,
+          imageUrl: 'https://images.unsplash.com/photo-1567306226416-28f0efdc88ce?auto=format&fit=crop&w=900&q=70',
+          tags: ['apel','segar']
+        },
+        {
+          id: 'P-FRU-BAN',
+          name: 'Pisang Cavendish',
+          category: 'fruit',
+          price: 22000,
+          unit: 'sisir',
+          stock: 12,
+          promo: false,
+          imageUrl: 'https://images.unsplash.com/photo-1528825871115-3581a5387919?auto=format&fit=crop&w=900&q=70',
+          tags: ['pisang']
+        },
+        {
+          id: 'P-FRU-ORG',
+          name: 'Jeruk Manis',
+          category: 'fruit',
+          price: 25000,
+          unit: 'kg',
+          stock: 20,
+          promo: false,
+          imageUrl: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?auto=format&fit=crop&w=900&q=70',
+          tags: ['jeruk']
+        },
+        {
+          id: 'P-SNK-KER',
+          name: 'Keripik Pisang Coklat',
+          category: 'snack',
+          price: 15000,
+          unit: 'pack',
+          stock: 30,
+          promo: true,
+          imageUrl: 'https://images.unsplash.com/photo-1621939514649-280e2aa0f1b5?auto=format&fit=crop&w=900&q=70',
+          tags: ['keripik','manis']
+        },
+        {
+          id: 'P-SNK-KAC',
+          name: 'Kacang Panggang',
+          category: 'snack',
+          price: 17000,
+          unit: 'pack',
+          stock: 26,
+          promo: false,
+          imageUrl: 'https://images.unsplash.com/photo-1615486363870-5f724b7ac12f?auto=format&fit=crop&w=900&q=70',
+          tags: ['kacang']
+        },
+        {
+          id: 'P-SNK-BIS',
+          name: 'Biskuit Butter',
+          category: 'snack',
+          price: 12000,
+          unit: 'pack',
+          stock: 40,
+          promo: false,
+          imageUrl: 'https://images.unsplash.com/photo-1615486363979-e9ce8b063a13?auto=format&fit=crop&w=900&q=70',
+          tags: ['biskuit']
+        }
+      ];
+    }
+
+    // ---------- Backend adapters ----------
+    const backend = {
+      async init(){
+        store.backend.ready = false;
+        backend.cleanupRealtime();
+        setSyncIndicator(store.settings.syncMode, store.net.online);
+
+        if (store.settings.syncMode === 'firebase') {
+          const ok = await backend.initFirebase();
+          store.backend.ready = ok;
+          $('#homeNotice').classList.toggle('hidden', true);
+          return ok;
+        }
+
+        if (store.settings.syncMode === 'cloudflare') {
+          const ok = !!(store.settings.cloudflare?.endpoint);
+          store.backend.ready = ok;
+          $('#homeNotice').classList.toggle('hidden', !ok);
+          return ok;
+        }
+
+        // local
+        store.backend.ready = true;
+        $('#homeNotice').classList.toggle('hidden', false);
+        return true;
+      },
+
+      cleanupRealtime(){
+        try {
+          store.backend.fb.unsubProducts && store.backend.fb.unsubProducts();
+          store.backend.fb.unsubOrders && store.backend.fb.unsubOrders();
+        } catch {}
+        store.backend.fb.unsubProducts = null;
+        store.backend.fb.unsubOrders = null;
+      },
+
+      async initFirebase(){
+        // Wait for firebase scripts
+        for (let i=0;i<30;i++){
+          if (window.firebase?.apps) break;
+          await sleep(60);
+        }
+        const cfgStr = (store.settings.firebaseConfig || '').trim();
+        const cfg = safeJsonParse(cfgStr, null);
+        if (!cfg || !cfg.apiKey) {
+          toast('Firebase config belum diisi.');
+          store.settings.syncMode = 'local';
+          save('settings');
+          setSyncIndicator('local', store.net.online);
+          return false;
+        }
+
+        try {
+          if (!firebase.apps.length) {
+            store.backend.fb.app = firebase.initializeApp(cfg);
+          } else {
+            store.backend.fb.app = firebase.app();
+          }
+          store.backend.fb.auth = firebase.auth();
+          store.backend.fb.db = firebase.firestore();
+          // Offline persistence for stability
+          try { await store.backend.fb.db.enablePersistence({ synchronizeTabs: true }); } catch {}
+
+          // Anonymous auth for placing orders (optional; Security Rules decide)
+          try {
+            if (!store.backend.fb.auth.currentUser) {
+              await store.backend.fb.auth.signInAnonymously();
+            }
+          } catch {}
+
+          // Realtime listeners
+          const cP = store.settings.firestoreCollections.products || 'products';
+          const cO = store.settings.firestoreCollections.orders || 'orders';
+
+          store.backend.fb.unsubProducts = store.backend.fb.db.collection(cP)
+            .onSnapshot((snap) => {
+              const arr = [];
+              snap.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
+              store.products = arr.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+              save('products');
+              renderHome();
+              renderAdmin();
+            }, (err) => {
+              console.warn('products snapshot err', err);
+              toast('Gagal realtime produk. Cek koneksi/rules.');
+            });
+
+          store.backend.fb.unsubOrders = store.backend.fb.db.collection(cO)
+            .orderBy('createdAt', 'desc')
+            .limit(50)
+            .onSnapshot((snap) => {
+              const arr = [];
+              snap.forEach(doc => arr.push({ id: doc.id, ...doc.data() }));
+              // Merge with local orders for demo continuity
+              store.orders = mergeOrders(store.orders, arr);
+              save('orders');
+              renderOrders();
+              renderAdmin();
+            }, (err) => {
+              console.warn('orders snapshot err', err);
+            });
+
+          setSyncIndicator('firebase', store.net.online);
+          return true;
+        } catch (e) {
+          console.error(e);
+          toast('Init Firebase gagal.');
+          store.settings.syncMode = 'local';
+          save('settings');
+          setSyncIndicator('local', store.net.online);
+          return false;
+        }
+      },
+
+      async pull(){
+        const mode = store.settings.syncMode;
+        if (!store.net.online) { toast('Offline. Menggunakan cache.'); return; }
+
+        if (mode === 'cloudflare') return backend.pullCloudflare();
+        if (mode === 'firebase') {
+          toast('Realtime aktif. Sync manual tidak diperlukan.');
+          return;
+        }
+        toast('Mode lokal: tidak ada server untuk di-sync.');
+      },
+
+      async pullCloudflare(){
+        const { endpoint, token } = store.settings.cloudflare || {};
+        if (!endpoint) { toast('Endpoint Cloudflare belum diisi.'); return; }
+        const url = endpoint.replace(/\/$/, '');
+
+        await withRetry(async () => {
+          const res = await fetch(url + '/products', {
+            headers: {
+              'Accept': 'application/json',
+              ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+            }
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            store.products = data;
+            save('products');
+            renderHome();
+            renderAdmin();
+          }
+        }, { label: 'pullProducts' });
+
+        await withRetry(async () => {
+          const res = await fetch(url + '/orders?limit=50', {
+            headers: {
+              'Accept': 'application/json',
+              ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+            }
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            store.orders = mergeOrders(store.orders, data);
+            save('orders');
+            renderOrders();
+            renderAdmin();
+          }
+        }, { label: 'pullOrders' });
+
+        toast('Sync Cloudflare selesai.');
+      },
+
+      async upsertProduct(p){
+        // Always update local immediately for responsiveness
+        const idx = store.products.findIndex(x => x.id === p.id);
+        if (idx >= 0) store.products[idx] = { ...store.products[idx], ...p };
+        else store.products.unshift(p);
+        save('products');
+        renderHome();
+        renderAdmin();
+
+        if (!store.net.online) return;
+
+        const mode = store.settings.syncMode;
+        if (mode === 'firebase' && store.backend.fb.db) {
+          const cP = store.settings.firestoreCollections.products || 'products';
+          await withRetry(async () => {
+            await store.backend.fb.db.collection(cP).doc(p.id).set(p, { merge: true });
+          }, { label: 'firebase upsertProduct' });
+          return;
+        }
+
+        if (mode === 'cloudflare') {
+          const { endpoint, token } = store.settings.cloudflare || {};
+          if (!endpoint) return;
+          const url = endpoint.replace(/\/$/, '');
+          await withRetry(async () => {
+            const res = await fetch(url + '/products/' + encodeURIComponent(p.id), {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+              },
+              body: JSON.stringify(p)
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+          }, { label: 'cloudflare upsertProduct' });
+          return;
+        }
+      },
+
+      async deleteProduct(productId){
+        const id = String(productId || '').trim();
+        if (!id) return;
+
+        // Remove locally first
+        const beforeLen = store.products.length;
+        store.products = (store.products || []).filter(p => p.id !== id);
+
+        // Remove from cart if exists
+        if (store.cart && Object.prototype.hasOwnProperty.call(store.cart, id)) {
+          delete store.cart[id];
+          save('cart');
+          renderCart();
+        }
+
+        if (store.products.length !== beforeLen) {
+          save('products');
+          renderHome();
+          renderAdmin();
+        }
+
+        if (!store.net.online) return;
+
+        const mode = store.settings.syncMode;
+        if (mode === 'firebase' && store.backend.fb.db) {
+          const cP = store.settings.firestoreCollections.products || 'products';
+          await withRetry(async () => {
+            await store.backend.fb.db.collection(cP).doc(id).delete();
+          }, { label: 'firebase deleteProduct' });
+          return;
+        }
+
+        if (mode === 'cloudflare') {
+          const { endpoint, token } = store.settings.cloudflare || {};
+          if (!endpoint) return;
+          const url = endpoint.replace(/\/$/, '');
+          await withRetry(async () => {
+            const res = await fetch(url + '/products/' + encodeURIComponent(id), {
+              method: 'DELETE',
+              headers: {
+                ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+              }
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+          }, { label: 'cloudflare deleteProduct' });
+          return;
+        }
+      },
+
+      async createOrder(order){
+        // Save local first
+        store.orders.unshift(order);
+        save('orders');
+        renderOrders();
+        renderAdmin();
+
+        if (!store.net.online) return;
+
+        const mode = store.settings.syncMode;
+        if (mode === 'firebase' && store.backend.fb.db) {
+          const cO = store.settings.firestoreCollections.orders || 'orders';
+          await withRetry(async () => {
+            await store.backend.fb.db.collection(cO).doc(order.id).set(order, { merge: true });
+          }, { label: 'firebase createOrder' });
+          return;
+        }
+
+        if (mode === 'cloudflare') {
+          const { endpoint, token } = store.settings.cloudflare || {};
+          if (!endpoint) return;
+          const url = endpoint.replace(/\/$/, '');
+          await withRetry(async () => {
+            const res = await fetch(url + '/orders', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+              },
+              body: JSON.stringify(order)
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+          }, { label: 'cloudflare createOrder' });
+          return;
+        }
+      },
+
+      async updateOrderStatus(orderId, status){
+        const idx = store.orders.findIndex(o => o.id === orderId);
+        if (idx >= 0) {
+          store.orders[idx] = { ...store.orders[idx], status, statusUpdatedAt: nowIso() };
+          save('orders');
+          renderOrders();
+          renderAdmin();
+        }
+
+        if (!store.net.online) return;
+
+        const mode = store.settings.syncMode;
+        if (mode === 'firebase' && store.backend.fb.db) {
+          const cO = store.settings.firestoreCollections.orders || 'orders';
+          await withRetry(async () => {
+            await store.backend.fb.db.collection(cO).doc(orderId).set({ status, statusUpdatedAt: nowIso() }, { merge: true });
+          }, { label: 'firebase updateOrderStatus' });
+        }
+
+        if (mode === 'cloudflare') {
+          const { endpoint, token } = store.settings.cloudflare || {};
+          if (!endpoint) return;
+          const url = endpoint.replace(/\/$/, '');
+          await withRetry(async () => {
+            const res = await fetch(url + '/orders/' + encodeURIComponent(orderId) + '/status', {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+              },
+              body: JSON.stringify({ status })
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+          }, { label: 'cloudflare updateOrderStatus' });
+        }
+      }
+    };
+
+    function mergeOrders(oldList, newList){
+      const map = new Map();
+      for (const o of (oldList || [])) map.set(o.id, o);
+      for (const o of (newList || [])) map.set(o.id, { ...map.get(o.id), ...o });
+      return Array.from(map.values()).sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
+    }
+
+    async function withRetry(fn, { label='op', retries=4 }={}){
+      let attempt = 0;
+      let delay = 250;
+      while (true) {
+        try {
+          return await fn();
+        } catch (e) {
+          attempt++;
+          if (attempt > retries) {
+            console.warn(label, 'failed', e);
+            toast('Gagal sync: ' + label);
+            throw e;
+          }
+          await sleep(delay + Math.random()*120);
+          delay *= 1.9;
+        }
+      }
+    }
+
+    // ---------- Rendering ----------
+    function setRoute(route){
+      store.route = route;
+      // Sections
+      $('#viewHome').classList.toggle('hidden', route !== 'home');
+      $('#viewCart').classList.toggle('hidden', route !== 'cart');
+      $('#viewOrders').classList.toggle('hidden', route !== 'orders');
+      $('#viewAdmin').classList.toggle('hidden', route !== 'admin');
+      $('#viewHelp').classList.toggle('hidden', route !== 'help');
+
+      // Nav highlight
+      $$('.navBtn').forEach(b => {
+        const active = b.dataset.route === route;
+        b.classList.toggle('ring-glow', active);
+        b.classList.toggle('bg-white/5', active);
+      });
+
+      // Header search row relevance
+      if (route !== 'home') {
+        $('#searchRow').classList.add('hidden');
+      }
+
+      // Render route-specific
+      if (route === 'home') renderHome();
+      if (route === 'cart') renderCart();
+      if (route === 'orders') renderOrders();
+      if (route === 'admin') renderAdmin();
+    }
+
+    function productMatches(p){
+      const cat = store.category;
+      const q = (store.query || '').toLowerCase().trim();
+
+      let okCat = true;
+      if (cat === 'fruit') okCat = p.category === 'fruit';
+      if (cat === 'snack') okCat = p.category === 'snack';
+      if (cat === 'promo') okCat = !!p.promo;
+
+      let okQ = true;
+      if (q) {
+        const hay = `${p.name||''} ${(p.tags||[]).join(' ')}`.toLowerCase();
+        okQ = hay.includes(q);
+      }
+
+      return okCat && okQ;
+    }
+
+    function renderHome(){
+      const grid = $('#productGrid');
+      const items = store.products.filter(productMatches);
+
+      // Skeleton if no products at all
+      if (!store.products.length) {
+        grid.innerHTML = Array.from({length: 6}).map(() => `
+          <div class="glass rounded-2xl p-3 border border-white/10">
+            <div class="skeleton rounded-xl aspect-[4/3]"></div>
+            <div class="mt-3 h-3 w-3/4 skeleton rounded"></div>
+            <div class="mt-2 h-3 w-1/2 skeleton rounded"></div>
+            <div class="mt-3 h-10 w-full skeleton rounded-xl"></div>
+          </div>
+        `).join('');
+        return;
+      }
+
+      $('#productEmpty').classList.toggle('hidden', items.length !== 0);
+
+      grid.innerHTML = items.map(p => {
+        const img = driveToDirect(p.imageUrl);
+        const out = Math.max(0, Number(p.stock ?? 0));
+        const inCartQty = Number(store.cart[p.id] || 0);
+        return `
+          <article class="glass rounded-2xl p-3 border border-white/10 lift">
+            <div class="relative rounded-xl overflow-hidden aspect-[4/3] bg-white/5 border border-white/10">
+              <img src="${escapeAttr(img)}" alt="${escapeAttr(p.name)}" class="h-full w-full object-cover" loading="lazy" onerror="this.style.display='none'; this.parentElement.classList.add('grid','place-items-center'); this.parentElement.innerHTML='<div class=\'text-xs text-slate-300/90 px-3 text-center\'>Gambar tidak tersedia</div>'" />
+              ${p.promo ? `<div class="absolute top-2 left-2 px-2 py-1 rounded-full bg-fuchsia-500/25 border border-fuchsia-300/20 text-[11px] font-semibold">Promo</div>` : ''}
+              ${out <= 0 ? `<div class="absolute inset-0 bg-black/55 grid place-items-center"><div class="px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-sm font-semibold">Habis</div></div>` : ''}
+            </div>
+
+            <div class="mt-3 min-h-[44px]">
+              <div class="text-sm font-semibold leading-snug lineclamp-2">${escapeHtml(p.name)}</div>
+              <div class="mt-1 flex items-center justify-between gap-2">
+                <div class="text-xs text-slate-300/90">${escapeHtml(p.category === 'fruit' ? 'Buah' : 'Snack')} • Stok ${out}</div>
+              </div>
+            </div>
+
+            <div class="mt-3 flex items-center justify-between gap-2">
+              <div class="min-w-0">
+                <div class="text-[11px] text-slate-300/90">Harga</div>
+                <div class="font-semibold truncate">${rupiah(p.price)}<span class="text-xs text-slate-300/90 font-normal">/${escapeHtml(p.unit || 'pcs')}</span></div>
+              </div>
+
+              <button class="tap lift rounded-2xl px-3 py-3 bg-indigo-500/20 border border-indigo-300/20 text-sm font-semibold ${out<=0 ? 'opacity-50 pointer-events-none' : ''}" data-add="${escapeAttr(p.id)}">
+                ${inCartQty ? `+ (${inCartQty})` : '+ Keranjang'}
+              </button>
+            </div>
+          </article>
+        `;
+      }).join('');
+
+      // Bind add buttons
+      $$('[data-add]').forEach(btn => {
+        btn.onclick = () => {
+          const id = btn.dataset.add;
+          addToCart(id, 1);
+        };
+      });
+    }
+
+    function cartItems(){
+      const items = [];
+      for (const [id, qty] of Object.entries(store.cart)) {
+        const p = store.products.find(x => x.id === id);
+        if (!p) continue;
+        items.push({ product: p, qty: Number(qty) });
+      }
+      return items;
+    }
+
+    function cartTotal(){
+      return cartItems().reduce((sum, it) => sum + (Number(it.product.price||0) * it.qty), 0);
+    }
+
+    function renderCart(){
+      const list = $('#cartList');
+      const items = cartItems();
+      $('#cartEmpty').classList.toggle('hidden', items.length !== 0);
+      $('#cartTotal').textContent = rupiah(cartTotal());
+
+      const count = items.reduce((s, it) => s + it.qty, 0);
+      $('#cartBadge').textContent = count;
+      $('#cartBadge').classList.toggle('hidden', count === 0);
+
+      list.innerHTML = items.map(it => {
+        const p = it.product;
+        const img = driveToDirect(p.imageUrl);
+        const meta = p.category === 'fruit' ? 'Buah' : 'Snack';
+        return `
+          <div class="glass rounded-2xl p-3 border border-white/10">
+            <div class="flex gap-3">
+              <div class="h-20 w-20 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                <img src="${escapeAttr(img)}" alt="${escapeAttr(p.name)}" class="h-full w-full object-cover" loading="lazy" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold leading-snug lineclamp-2">${escapeHtml(p.name)}</div>
+                    <div class="mt-1 text-xs text-slate-300/90">${meta} • ${rupiah(p.price)}/${escapeHtml(p.unit||'pcs')}</div>
+                  </div>
+                  <button class="tap lift rounded-xl px-3 py-2 bg-white/5 border border-white/10 text-xs" data-remove="${escapeAttr(p.id)}">Hapus</button>
+                </div>
+
+                <div class="mt-3 flex items-center justify-between">
+                  <div class="text-sm font-semibold">${rupiah(p.price * it.qty)}</div>
+                  <div class="flex items-center gap-2">
+                    <button class="tap lift h-10 w-10 rounded-2xl bg-white/5 border border-white/10" data-qty="dec" data-id="${escapeAttr(p.id)}">-
+                    </button>
+                    <div class="w-10 text-center font-semibold">${it.qty}</div>
+                    <button class="tap lift h-10 w-10 rounded-2xl bg-white/5 border border-white/10" data-qty="inc" data-id="${escapeAttr(p.id)}">+
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      $$('[data-qty]').forEach(b => {
+        b.onclick = () => {
+          const id = b.dataset.id;
+          const dir = b.dataset.qty;
+          addToCart(id, dir === 'inc' ? 1 : -1);
+        };
+      });
+      $$('[data-remove]').forEach(b => {
+        b.onclick = () => {
+          const id = b.dataset.remove;
+          delete store.cart[id];
+          save('cart');
+          renderCart();
+          renderHome();
+          toast('Item dihapus.');
+        };
+      });
+
+      $('#btnCheckout').classList.toggle('opacity-50', items.length === 0);
+      $('#btnCheckout').classList.toggle('pointer-events-none', items.length === 0);
+    }
+
+    function renderOrders(){
+      const list = $('#ordersList');
+      const phone = normalizePhone($('#inpTrackPhone').value || '');
+      let filtered = store.orders;
+      if (phone) filtered = filtered.filter(o => normalizePhone(o.customer?.phone) === phone);
+
+      $('#ordersEmpty').classList.toggle('hidden', filtered.length !== 0);
+
+      list.innerHTML = filtered.map(o => {
+        const meta = statusMeta(o.status);
+        const items = (o.items || []).slice(0, 3).map(it => `${it.name} x${it.qty}`).join(' • ');
+        const rest = (o.items || []).length > 3 ? ` +${(o.items||[]).length - 3} lain` : '';
+        const dt = formatDate(o.createdAt);
+        return `
+          <div class="glass rounded-2xl p-4 border border-white/10">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-sm font-semibold">${escapeHtml(o.id)}</div>
+                <div class="mt-1 text-xs text-slate-300/90">${escapeHtml(dt)} • ${escapeHtml(o.customer?.name || '-')}</div>
+              </div>
+              <div class="shrink-0 px-3 py-1.5 rounded-full border text-xs font-semibold ${meta.color}">${escapeHtml(meta.label)}</div>
+            </div>
+
+            <div class="mt-3 text-xs text-slate-300/90">${escapeHtml(items + rest)}</div>
+
+            <div class="mt-3 flex items-center justify-between">
+              <div>
+                <div class="text-[11px] text-slate-300/90">Total</div>
+                <div class="text-sm font-semibold">${rupiah(o.total)}</div>
+              </div>
+              <div class="flex gap-2">
+                <button class="tap lift rounded-xl px-4 py-2 bg-white/5 border border-white/10 text-xs" data-order-detail="${escapeAttr(o.id)}">Detail</button>
+                <button class="tap lift rounded-xl px-4 py-2 bg-emerald-500/20 border border-emerald-300/20 text-xs font-semibold" data-order-wa="${escapeAttr(o.id)}">WA</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      $$('[data-order-detail]').forEach(b => {
+        b.onclick = () => showOrderDetail(b.dataset.orderDetail);
+      });
+      $$('[data-order-wa]').forEach(b => {
+        b.onclick = () => openOrderWhatsApp(b.dataset.orderWa);
+      });
+    }
+
+    function renderAdmin(){
+      // Lock panel
+      $('#adminLocked').classList.toggle('hidden', store.adminUnlocked);
+      $('#adminPanel').classList.toggle('hidden', !store.adminUnlocked);
+
+      if (!store.adminUnlocked) {
+        store.adminSelectMode = false;
+        adminClearSelection();
+        return;
+      }
+
+      // Maintain bar
+      const bar = $('#adminMaintainBar');
+      if (bar) bar.classList.toggle('hidden', !store.adminSelectMode);
+      const cnt = $('#adminSelCount');
+      if (cnt) cnt.textContent = String(adminSelectedIds().length);
+
+      // Products
+      const cont = $('#adminProducts');
+      const products = [...store.products].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+      cont.innerHTML = products.map(p => {
+        const img = driveToDirect(p.imageUrl);
+        const selected = !!store.adminSelected?.[p.id];
+        const mode = !!store.adminSelectMode;
+        return `
+          <div class="glass rounded-2xl p-3 border border-white/10 ${mode && selected ? 'ring-glow' : ''}" ${mode ? `data-select-row="${escapeAttr(p.id)}"` : ''}>
+            <div class="flex gap-3">
+              ${mode ? `
+                <button class="tap lift h-10 w-10 rounded-2xl border text-sm font-bold grid place-items-center ${selected ? 'bg-indigo-500/25 border-indigo-300/25' : 'bg-white/5 border-white/10'}" data-select="${escapeAttr(p.id)}">
+                  ${selected ? '✓' : ''}
+                </button>
+              ` : ''}
+              <div class="h-16 w-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                <img src="${escapeAttr(img)}" class="h-full w-full object-cover" alt="${escapeAttr(p.name)}" loading="lazy" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <div class="text-sm font-semibold lineclamp-2">${escapeHtml(p.name)}</div>
+                    <div class="mt-1 text-xs text-slate-300/90">${escapeHtml(p.category)} • ${rupiah(p.price)} / ${escapeHtml(p.unit || 'pcs')} • stok ${Number(p.stock ?? 0)}</div>
+                  </div>
+                  <div class="flex gap-2 shrink-0 ${mode ? 'opacity-40 pointer-events-none' : ''}">
+                    <button class="tap lift rounded-xl px-3 py-2 bg-white/5 border border-white/10 text-xs font-semibold" data-edit-product="${escapeAttr(p.id)}">Edit</button>
+                    <button class="tap lift rounded-xl px-3 py-2 bg-rose-500/20 border border-rose-300/20 text-xs font-semibold" data-del-product="${escapeAttr(p.id)}">Hapus</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // selection toggles
+      if (store.adminSelectMode) {
+        $$('[data-select]').forEach(b => {
+          b.onclick = () => adminToggleSelect(b.dataset.select);
+        });
+        $$('[data-select-row]').forEach(row => {
+          row.onclick = (e) => {
+            if (e.target?.closest?.('[data-select]')) return;
+            adminToggleSelect(row.dataset.selectRow);
+          };
+        });
+      }
+
+      // edit/delete single
+      $$('[data-edit-product]').forEach(b => {
+        b.onclick = () => openProductEditor(b.dataset.editProduct);
+      });
+      $$('[data-del-product]').forEach(b => {
+        b.onclick = async () => {
+          const id = b.dataset.delProduct;
+          const p = store.products.find(x => x.id === id);
+          const name = p?.name || id;
+          const ok = await confirmModal({
+            title: 'Hapus Produk',
+            message: `Hapus produk "${name}"?`,
+            confirmText: 'Hapus',
+            cancelText: 'Batal',
+            tone: 'danger'
+          });
+          if (!ok) return;
+          try {
+            await backend.deleteProduct(id);
+            toast('Produk dihapus.');
+          } catch {
+            toast('Produk dihapus lokal.');
+          }
+        };
+      });
+
+      // Orders
+      const ocont = $('#adminOrders');
+      const orders = (store.orders || []).slice(0, 30);
+      ocont.innerHTML = orders.map(o => {
+        const meta = statusMeta(o.status);
+        return `
+          <div class="glass rounded-2xl p-3 border border-white/10">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-sm font-semibold">${escapeHtml(o.id)}</div>
+                <div class="mt-1 text-xs text-slate-300/90">${escapeHtml(o.customer?.name || '-')} • ${escapeHtml(formatDate(o.createdAt))}</div>
+              </div>
+              <div class="shrink-0 px-3 py-1.5 rounded-full border text-[11px] font-semibold ${meta.color}">${escapeHtml(meta.label)}</div>
+            </div>
+            <div class="mt-3 flex items-center justify-between gap-2">
+              <div class="text-sm font-semibold">${rupiah(o.total)}</div>
+              <div class="flex gap-2">
+                <button class="tap lift rounded-xl px-3 py-2 bg-white/5 border border-white/10 text-xs" data-admin-detail="${escapeAttr(o.id)}">Detail</button>
+                <button class="tap lift rounded-xl px-3 py-2 bg-emerald-500/20 border border-emerald-300/20 text-xs font-semibold" data-admin-status="${escapeAttr(o.id)}">Status</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      $$('[data-admin-detail]').forEach(b => b.onclick = () => showOrderDetail(b.dataset.adminDetail, { admin: true }));
+      $$('[data-admin-status]').forEach(b => b.onclick = () => openStatusEditor(b.dataset.adminStatus));
+    }
+
+    function escapeHtml(str){
+      return String(str ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+    function escapeAttr(str){
+      return escapeHtml(str).replace(/\n/g, ' ');
+    }
+
+    function formatDate(iso){
+      if (!iso) return '-';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso);
+      return d.toLocaleString(store.settings.locale, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    }
+
+    // ---------- Admin selection helpers ----------
+    function adminSelectedIds(){
+      return Object.entries(store.adminSelected || {}).filter(([,v]) => !!v).map(([k]) => k);
+    }
+
+    function adminClearSelection(){
+      store.adminSelected = {};
+    }
+
+    function adminToggleSelect(id){
+      if (!store.adminSelectMode) return;
+      const cur = !!store.adminSelected?.[id];
+      store.adminSelected = { ...(store.adminSelected || {}), [id]: !cur };
+      renderAdmin();
+    }
+
+    function adminSelectAllVisible(){
+      const products = [...store.products].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+      const sel = { ...(store.adminSelected || {}) };
+      products.forEach(p => { sel[p.id] = true; });
+      store.adminSelected = sel;
+      renderAdmin();
+    }
+
+    async function adminBulkDelete(){
+      const ids = adminSelectedIds();
+      if (!ids.length) { toast('Belum ada produk dipilih.'); return; }
+
+      const ok = await confirmModal({
+        title: 'Hapus Banyak Produk',
+        message: `Hapus ${ids.length} produk terpilih?`,
+        confirmText: 'Hapus',
+        cancelText: 'Batal',
+        tone: 'danger'
+      });
+      if (!ok) return;
+
+      // sequential delete to respect rate limits
+      let deleted = 0;
+      for (const id of ids) {
+        try { await backend.deleteProduct(id); } catch {}
+        deleted++;
+      }
+      adminClearSelection();
+      store.adminSelectMode = false;
+      renderAdmin();
+      toast(`Selesai: ${deleted} produk dihapus.`);
+    }
+
+    async function adminBulkDuplicate(){
+      const ids = adminSelectedIds();
+      if (!ids.length) { toast('Belum ada produk dipilih.'); return; }
+
+      const ok = await confirmModal({
+        title: 'Duplikat Produk',
+        message: `Duplikat ${ids.length} produk terpilih? (ID baru akan dibuat)`,
+        confirmText: 'Duplikat',
+        cancelText: 'Batal',
+        tone: 'ok'
+      });
+      if (!ok) return;
+
+      let made = 0;
+      for (const id of ids) {
+        const src = store.products.find(p => p.id === id);
+        if (!src) continue;
+        const copy = {
+          ...src,
+          id: uid('P'),
+          name: String(src.name || 'Produk').trim() + ' (Copy)',
+          promo: !!src.promo,
+          updatedAt: nowIso(),
+          createdAt: nowIso()
+        };
+        try { await backend.upsertProduct(copy); } catch {}
+        made++;
+      }
+      adminClearSelection();
+      store.adminSelectMode = false;
+      renderAdmin();
+      toast(`Selesai: ${made} produk diduplikat.`);
+    }
+
+    // ---------- Actions ----------
+    function addToCart(productId, delta){
+      const p = store.products.find(x => x.id === productId);
+      if (!p) return;
+      const cur = Number(store.cart[productId] || 0);
+      let next = cur + Number(delta);
+      if (next <= 0) {
+        delete store.cart[productId];
+        toast('Item dihapus dari keranjang.');
+      } else {
+        const stock = Number(p.stock ?? 0);
+        if (stock > 0) next = Math.min(next, stock);
+        store.cart[productId] = next;
+        toast('Keranjang: ' + next + ' item');
+      }
+      save('cart');
+      renderCart();
+      renderHome();
+    }
+
+    function buildOrderFromCart(form){
+      const items = cartItems().map(it => ({
+        productId: it.product.id,
+        name: it.product.name,
+        price: it.product.price,
+        unit: it.product.unit || 'pcs',
+        qty: it.qty,
+        subtotal: it.product.price * it.qty
+      }));
+
+      const total = items.reduce((s,i)=>s+i.subtotal,0);
+      const phone = normalizePhone(form.phone);
+
+      return {
+        id: uid('ORD'),
+        createdAt: nowIso(),
+        status: 'menunggu',
+        statusUpdatedAt: nowIso(),
+        channel: 'whatsapp',
+        customer: {
+          name: (form.name || '').trim(),
+          phone,
+          address: (form.address || '').trim(),
+        },
+        delivery: {
+          method: form.deliveryMethod,
+          timeWindow: (form.timeWindow || '').trim(),
+          note: (form.note || '').trim(),
+        },
+        payment: {
+          method: form.paymentMethod,
+        },
+        items,
+        total,
+        app: {
+          version: '1.0',
+          syncMode: store.settings.syncMode
+        }
+      };
+    }
+
+    function orderMessage(order){
+      const lines = [];
+      lines.push(`Halo, saya mau konfirmasi order *${order.id}*.`);
+      lines.push('');
+      lines.push('*Detail Pesanan:*');
+      order.items.forEach(it => {
+        lines.push(`- ${it.name} x${it.qty} = ${rupiah(it.subtotal)}`);
+      });
+      lines.push(`Total: *${rupiah(order.total)}*`);
+      lines.push('');
+      lines.push(`Nama: ${order.customer.name}`);
+      lines.push(`No. WA: ${order.customer.phone}`);
+      lines.push(`Alamat: ${order.customer.address}`);
+      if (order.delivery?.timeWindow) lines.push(`Waktu: ${order.delivery.timeWindow}`);
+      if (order.delivery?.note) lines.push(`Catatan: ${order.delivery.note}`);
+      lines.push('');
+      lines.push('Mohon dibalas dengan estimasi & konfirmasi ya. Terima kasih!');
+      return lines.join('\n');
+    }
+
+    function openWA(text){
+      const wa = normalizePhone(store.settings.waNumber);
+      if (!wa) {
+        toast('Nomor WA toko belum diisi.');
+        openSettings();
+        return;
+      }
+      const url = `https://wa.me/${wa}?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    function openOrderWhatsApp(orderId){
+      const o = store.orders.find(x => x.id === orderId);
+      if (!o) return;
+      openWA(orderMessage(o));
+    }
+
+    // ---------- Modal system ----------
+    function openModal({ title, subtitle='', bodyHtml, onMount }={}){
+      $('#modalTitle').textContent = title || 'Modal';
+      $('#modalSubtitle').textContent = subtitle || '';
+      $('#modalBody').innerHTML = bodyHtml || '';
+      $('#modalOverlay').classList.remove('hidden');
+      // Animate
+      const modal = $('#modal');
+      modal.style.transform = 'translateY(14px)';
+      modal.style.opacity = '0';
+      requestAnimationFrame(() => {
+        modal.style.transition = 'transform .22s ease, opacity .22s ease';
+        modal.style.transform = 'translateY(0)';
+        modal.style.opacity = '1';
+      });
+      onMount && onMount();
+    }
+
+    function closeModal(){
+      const overlay = $('#modalOverlay');
+      if (overlay.classList.contains('hidden')) return;
+      const modal = $('#modal');
+      modal.style.transform = 'translateY(12px)';
+      modal.style.opacity = '0';
+      window.setTimeout(() => overlay.classList.add('hidden'), 180);
+    }
+
+    function confirmModal({ title='Konfirmasi', message='Yakin?', confirmText='Ya', cancelText='Batal', tone='danger' }={}){
+      return new Promise((resolve) => {
+        const confirmClass = tone === 'danger'
+          ? 'bg-rose-500/20 border border-rose-300/20'
+          : 'bg-emerald-500/20 border border-emerald-300/20';
+
+        openModal({
+          title,
+          subtitle: '',
+          bodyHtml: `
+            <div class="space-y-4">
+              <div class="text-sm text-slate-200">${escapeHtml(message)}</div>
+              <div class="flex gap-2">
+                <button id="btnConfirmCancel" class="tap lift flex-1 rounded-2xl px-4 py-4 bg-white/5 border border-white/10 font-semibold">${escapeHtml(cancelText)}</button>
+                <button id="btnConfirmOk" class="tap lift flex-1 rounded-2xl px-4 py-4 ${confirmClass} font-semibold">${escapeHtml(confirmText)}</button>
+              </div>
+              <div class="text-[11px] text-slate-300/90">Tindakan ini tidak bisa dibatalkan.</div>
+            </div>
+          `,
+          onMount(){
+            $('#btnConfirmCancel').onclick = () => { closeModal(); resolve(false); };
+            $('#btnConfirmOk').onclick = () => { closeModal(); resolve(true); };
+          }
+        });
+      });
+    }
+
+    // ---------- Checkout flow ----------
+    function openCheckout(){
+      const items = cartItems();
+      if (!items.length) return;
+
+      const total = cartTotal();
+      const lastPhone = safeJsonParse(localStorage.getItem('shop_v1_last_phone'), '');
+      const lastName = safeJsonParse(localStorage.getItem('shop_v1_last_name'), '');
+      const lastAddress = safeJsonParse(localStorage.getItem('shop_v1_last_address'), '');
+
+      openModal({
+        title: 'Checkout',
+        subtitle: 'Isi data singkat untuk proses cepat.',
+        bodyHtml: `
+          <form id="frmCheckout" class="space-y-3">
+            <div class="grid grid-cols-2 gap-2">
+              <div class="col-span-2">
+                <label class="text-xs text-slate-300/90" for="coName">Nama</label>
+                <input id="coName" required placeholder="Nama penerima" value="${escapeAttr(lastName || '')}" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+              </div>
+              <div class="col-span-2">
+                <label class="text-xs text-slate-300/90" for="coPhone">No. WhatsApp</label>
+                <input id="coPhone" required inputmode="tel" placeholder="0812xxxx" value="${escapeAttr(lastPhone || '')}" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+              </div>
+              <div class="col-span-2">
+                <label class="text-xs text-slate-300/90" for="coAddress">Alamat</label>
+                <textarea id="coAddress" required rows="2" placeholder="Alamat lengkap" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40">${escapeHtml(lastAddress || '')}</textarea>
+              </div>
+              <div class="col-span-2">
+                <label class="text-xs text-slate-300/90" for="coTime">Waktu pengantaran (opsional)</label>
+                <input id="coTime" placeholder="Contoh: 13.00 - 15.00" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+              </div>
+              <div class="col-span-2">
+                <label class="text-xs text-slate-300/90" for="coNote">Catatan (opsional)</label>
+                <input id="coNote" placeholder="Matang / jangan pedas / dsb" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+              </div>
+              <div class="col-span-1">
+                <label class="text-xs text-slate-300/90" for="coDelivery">Metode</label>
+                <select id="coDelivery" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40">
+                  <option value="antar">Diantar</option>
+                  <option value="ambil">Ambil di toko</option>
+                </select>
+              </div>
+              <div class="col-span-1">
+                <label class="text-xs text-slate-300/90" for="coPay">Pembayaran</label>
+                <select id="coPay" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40">
+                  <option value="cod">COD</option>
+                  <option value="transfer">Transfer</option>
+                  <option value="qris">QRIS</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="glass rounded-2xl p-4 border border-white/10">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div class="text-xs text-slate-300/90">Total</div>
+                  <div class="text-xl font-semibold">${rupiah(total)}</div>
+                </div>
+                <button type="submit" class="tap lift rounded-2xl px-5 py-4 bg-gradient-to-br from-emerald-400 to-indigo-500 text-slate-950 font-semibold">Buat Order</button>
+              </div>
+              <div class="mt-2 text-[11px] text-slate-300/90">Setelah dibuat, WhatsApp akan terbuka untuk konfirmasi.</div>
+            </div>
+          </form>
+        `,
+        onMount(){
+          const frm = $('#frmCheckout');
+          frm.onsubmit = async (e) => {
+            e.preventDefault();
+            const form = {
+              name: $('#coName').value,
+              phone: $('#coPhone').value,
+              address: $('#coAddress').value,
+              timeWindow: $('#coTime').value,
+              note: $('#coNote').value,
+              deliveryMethod: $('#coDelivery').value,
+              paymentMethod: $('#coPay').value,
+            };
+            const phoneNorm = normalizePhone(form.phone);
+            if (!phoneNorm) { toast('Nomor WA tidak valid.'); return; }
+
+            localStorage.setItem('shop_v1_last_phone', JSON.stringify(form.phone));
+            localStorage.setItem('shop_v1_last_name', JSON.stringify(form.name));
+            localStorage.setItem('shop_v1_last_address', JSON.stringify(form.address));
+
+            const order = buildOrderFromCart(form);
+            // Reduce stock locally for feel-fast (server should validate in production)
+            for (const it of order.items) {
+              const p = store.products.find(x => x.id === it.productId);
+              if (p && typeof p.stock === 'number') p.stock = Math.max(0, p.stock - it.qty);
+            }
+            save('products');
+
+            // Clear cart
+            store.cart = {};
+            save('cart');
+            renderCart();
+            renderHome();
+
+            // Save order (and sync)
+            try {
+              await backend.createOrder(order);
+              closeModal();
+              toast('Order dibuat: ' + order.id);
+              // Autofill orders tracking phone
+              $('#inpTrackPhone').value = form.phone;
+              setRoute('orders');
+              renderOrders();
+              openWA(orderMessage(order));
+            } catch {
+              closeModal();
+              toast('Order tersimpan lokal. Sync akan dicoba saat online.');
+              setRoute('orders');
+              renderOrders();
+              openWA(orderMessage(order));
+            }
+          };
+        }
+      });
+    }
+
+    // ---------- Order Detail ----------
+    function showOrderDetail(orderId, { admin=false }={}){
+      const o = store.orders.find(x => x.id === orderId);
+      if (!o) return;
+      const meta = statusMeta(o.status);
+      const itemsHtml = (o.items || []).map(it => `
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-sm font-semibold">${escapeHtml(it.name)}</div>
+            <div class="text-xs text-slate-300/90">${rupiah(it.price)} • x${it.qty}</div>
+          </div>
+          <div class="text-sm font-semibold">${rupiah(it.subtotal)}</div>
+        </div>
+      `).join('');
+
+      openModal({
+        title: 'Detail Order',
+        subtitle: o.id,
+        bodyHtml: `
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-xs text-slate-300/90">Status</div>
+                <div class="mt-1 inline-flex items-center px-3 py-1.5 rounded-full border text-xs font-semibold ${meta.color}">${escapeHtml(meta.label)}</div>
+              </div>
+              <div class="text-right">
+                <div class="text-xs text-slate-300/90">Dibuat</div>
+                <div class="text-sm font-semibold">${escapeHtml(formatDate(o.createdAt))}</div>
+              </div>
+            </div>
+
+            <div class="glass rounded-2xl p-4 border border-white/10">
+              <div class="text-sm font-semibold">Penerima</div>
+              <div class="mt-2 text-xs text-slate-200">${escapeHtml(o.customer?.name || '-')}</div>
+              <div class="text-xs text-slate-300/90">${escapeHtml(o.customer?.phone || '-')}</div>
+              <div class="mt-2 text-xs text-slate-300/90">${escapeHtml(o.customer?.address || '-')}</div>
+            </div>
+
+            <div class="glass rounded-2xl p-4 border border-white/10">
+              <div class="text-sm font-semibold">Item</div>
+              <div class="mt-3 space-y-3">${itemsHtml}</div>
+              <div class="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
+                <div class="text-sm font-semibold">Total</div>
+                <div class="text-lg font-semibold">${rupiah(o.total)}</div>
+              </div>
+            </div>
+
+            <div class="flex gap-2">
+              <button class="tap lift flex-1 rounded-2xl px-4 py-4 bg-emerald-500/20 border border-emerald-300/20 font-semibold" id="btnOrderWA">Konfirmasi via WA</button>
+              ${admin ? `<button class="tap lift rounded-2xl px-4 py-4 bg-indigo-500/20 border border-indigo-300/20 font-semibold" id="btnOrderStatus">Ubah Status</button>` : ''}
+            </div>
+          </div>
+        `,
+        onMount(){
+          $('#btnOrderWA').onclick = () => openOrderWhatsApp(orderId);
+          const b = $('#btnOrderStatus');
+          if (b) b.onclick = () => openStatusEditor(orderId);
+        }
+      });
+    }
+
+    function openStatusEditor(orderId){
+      const o = store.orders.find(x => x.id === orderId);
+      if (!o) return;
+      openModal({
+        title: 'Ubah Status',
+        subtitle: orderId,
+        bodyHtml: `
+          <div class="space-y-3">
+            <div class="text-xs text-slate-300/90">Status saat ini: <span class="font-semibold">${escapeHtml(o.status || 'menunggu')}</span></div>
+            <div class="grid grid-cols-2 gap-2">
+              ${['menunggu','diproses','dikirim','selesai','batal'].map(s => `
+                <button class="tap lift rounded-2xl px-4 py-4 bg-white/5 border border-white/10 text-sm font-semibold" data-set-status="${s}">${s}</button>
+              `).join('')}
+            </div>
+            <div class="text-[11px] text-slate-300/90">Pembeli bisa memantau status ini di menu Status.</div>
+          </div>
+        `,
+        onMount(){
+          $$('[data-set-status]').forEach(b => {
+            b.onclick = async () => {
+              const s = b.dataset.setStatus;
+              try {
+                await backend.updateOrderStatus(orderId, s);
+                toast('Status diperbarui: ' + s);
+                closeModal();
+              } catch {
+                toast('Status tersimpan lokal.');
+                closeModal();
+              }
+            };
+          });
+        }
+      });
+    }
+
+    // ---------- Product Editor ----------
+    function openProductEditor(productId){
+      const existing = store.products.find(x => x.id === productId) || null;
+      const p = existing || {
+        id: uid('P'),
+        name: '',
+        category: 'fruit',
+        price: 0,
+        unit: 'pcs',
+        stock: 0,
+        promo: false,
+        imageUrl: '',
+        tags: []
+      };
+
+      openModal({
+        title: existing ? 'Edit Produk' : 'Tambah Produk',
+        subtitle: existing ? p.id : 'Produk baru',
+        bodyHtml: `
+          <form id="frmProduct" class="space-y-3">
+            <div>
+              <label class="text-xs text-slate-300/90" for="prName">Nama</label>
+              <input id="prName" required value="${escapeAttr(p.name)}" placeholder="Nama produk" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-xs text-slate-300/90" for="prCat">Kategori</label>
+                <select id="prCat" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40">
+                  <option value="fruit" ${p.category==='fruit'?'selected':''}>Buah</option>
+                  <option value="snack" ${p.category==='snack'?'selected':''}>Snack</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-slate-300/90" for="prPromo">Promo</label>
+                <select id="prPromo" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40">
+                  <option value="false" ${!p.promo?'selected':''}>Tidak</option>
+                  <option value="true" ${p.promo?'selected':''}>Ya</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-xs text-slate-300/90" for="prPrice">Harga</label>
+                <input id="prPrice" required inputmode="numeric" value="${escapeAttr(String(p.price ?? 0))}" placeholder="Contoh: 25000" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+              </div>
+              <div>
+                <label class="text-xs text-slate-300/90" for="prUnit">Satuan</label>
+                <input id="prUnit" value="${escapeAttr(p.unit || 'pcs')}" placeholder="kg/pack/pcs" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-xs text-slate-300/90" for="prStock">Stok</label>
+                <input id="prStock" inputmode="numeric" value="${escapeAttr(String(p.stock ?? 0))}" placeholder="Contoh: 20" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+              </div>
+              <div>
+                <label class="text-xs text-slate-300/90" for="prTags">Tags</label>
+                <input id="prTags" value="${escapeAttr((p.tags||[]).join(', '))}" placeholder="apel, segar" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+              </div>
+            </div>
+
+            <div>
+              <label class="text-xs text-slate-300/90" for="prImg">Gambar (URL / Google Drive File ID)</label>
+              <input id="prImg" value="${escapeAttr(p.imageUrl || '')}" placeholder="Tempel link Drive atau fileId" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+              <div class="mt-2 text-[11px] text-slate-300/90">Contoh Drive: paste link share atau fileId → otomatis diubah jadi direct link.</div>
+            </div>
+
+            <div class="flex gap-2">
+              <button type="submit" class="tap lift flex-1 rounded-2xl px-4 py-4 bg-gradient-to-br from-indigo-500 to-emerald-400 text-slate-950 font-semibold">Simpan</button>
+              <button type="button" id="btnCancelProd" class="tap lift rounded-2xl px-4 py-4 bg-white/5 border border-white/10 font-semibold">Batal</button>
+            </div>
+
+            ${existing ? `
+              <button type="button" id="btnDeleteProd" class="tap lift w-full rounded-2xl px-4 py-4 bg-rose-500/20 border border-rose-300/20 font-semibold">Hapus Produk</button>
+            ` : ''}
+
+            <div class="text-[11px] text-slate-300/90">Setelah disimpan, data akan disimpan lokal dan di-sync ke backend (jika aktif).</div>
+          </form>
+        `,
+        onMount(){
+          $('#btnCancelProd').onclick = () => closeModal();
+
+          const delBtn = $('#btnDeleteProd');
+          if (delBtn) {
+            delBtn.onclick = async () => {
+              const ok = await confirmModal({
+                title: 'Hapus Produk',
+                message: `Hapus produk "${p.name || p.id}"?`,
+                confirmText: 'Hapus',
+                cancelText: 'Batal',
+                tone: 'danger'
+              });
+              if (!ok) return;
+              try {
+                await backend.deleteProduct(p.id);
+                toast('Produk dihapus.');
+                closeModal();
+              } catch {
+                toast('Produk dihapus lokal.');
+                closeModal();
+              }
+            };
+          }
+
+          $('#frmProduct').onsubmit = async (e) => {
+            e.preventDefault();
+            const obj = {
+              id: p.id,
+              name: $('#prName').value.trim(),
+              category: $('#prCat').value,
+              promo: $('#prPromo').value === 'true',
+              price: Number(String($('#prPrice').value).replace(/\D+/g, '')) || 0,
+              unit: $('#prUnit').value.trim() || 'pcs',
+              stock: Number(String($('#prStock').value).replace(/\D+/g, '')) || 0,
+              tags: ($('#prTags').value || '').split(',').map(s => s.trim()).filter(Boolean),
+              imageUrl: driveToDirect($('#prImg').value.trim()),
+              updatedAt: nowIso()
+            };
+            try {
+              await backend.upsertProduct(obj);
+              toast('Produk disimpan.');
+              closeModal();
+            } catch {
+              toast('Produk tersimpan lokal.');
+              closeModal();
+            }
+          };
+        }
+      });
+    }
+
+    // ---------- Settings ----------
+    function openSettings(){
+      const s = store.settings;
+      openModal({
+        title: 'Pengaturan',
+        subtitle: 'WhatsApp, Admin, Sinkronisasi',
+        bodyHtml: `
+          <form id="frmSettings" class="space-y-4">
+            <div class="glass rounded-2xl p-4 border border-white/10">
+              <div class="text-sm font-semibold">WhatsApp</div>
+              <div class="mt-3">
+                <label class="text-xs text-slate-300/90" for="stWa">Nomor WA Toko (internasional)</label>
+                <input id="stWa" value="${escapeAttr(s.waNumber)}" placeholder="62812xxxx" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+                <div class="mt-2 text-[11px] text-slate-300/90">Format: <span class="font-semibold">62812…</span> (tanpa +). Checkout akan chat ke nomor ini.</div>
+              </div>
+            </div>
+
+            <div class="glass rounded-2xl p-4 border border-white/10">
+              <div class="text-sm font-semibold">Admin (demo)</div>
+              <div class="mt-3 grid grid-cols-2 gap-2">
+                <div class="col-span-2">
+                  <label class="text-xs text-slate-300/90" for="stPin">PIN Admin</label>
+                  <input id="stPin" inputmode="numeric" value="${escapeAttr(s.adminPin)}" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40" />
+                  <div class="mt-2 text-[11px] text-slate-300/90">Produksi: ganti PIN demo dengan <span class="font-semibold">Firebase Auth</span> + Security Rules.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="glass rounded-2xl p-4 border border-white/10">
+              <div class="text-sm font-semibold">Sinkronisasi Data</div>
+              <div class="mt-3">
+                <label class="text-xs text-slate-300/90" for="stMode">Mode</label>
+                <select id="stMode" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500/40">
+                  <option value="local" ${s.syncMode==='local'?'selected':''}>Local (demo / offline-first)</option>
+                  <option value="firebase" ${s.syncMode==='firebase'?'selected':''}>Firebase Firestore (realtime)</option>
+                  <option value="cloudflare" ${s.syncMode==='cloudflare'?'selected':''}>Cloudflare Worker API (REST)</option>
+                </select>
+              </div>
+
+              <div class="mt-3" id="firebaseBox">
+                <div class="text-xs text-slate-300/90">Firebase config (JSON)</div>
+                <textarea id="stFb" rows="4" placeholder='{"apiKey":"...","authDomain":"...","projectId":"..."}' class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500/40">${escapeHtml(s.firebaseConfig || '')}</textarea>
+                <div class="mt-2 grid grid-cols-2 gap-2">
+                  <div>
+                    <label class="text-xs text-slate-300/90" for="stColP">Collection products</label>
+                    <input id="stColP" value="${escapeAttr(s.firestoreCollections?.products || 'products')}" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-indigo-500/40" />
+                  </div>
+                  <div>
+                    <label class="text-xs text-slate-300/90" for="stColO">Collection orders</label>
+                    <input id="stColO" value="${escapeAttr(s.firestoreCollections?.orders || 'orders')}" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-indigo-500/40" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-3" id="cloudflareBox">
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="col-span-2">
+                    <label class="text-xs text-slate-300/90" for="stCfEnd">Endpoint Worker</label>
+                    <input id="stCfEnd" value="${escapeAttr(s.cloudflare?.endpoint || '')}" placeholder="https://xxxx.workers.dev" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-indigo-500/40" />
+                    <div class="mt-2 text-[11px] text-slate-300/90">Expected routes: <code class="px-1 py-0.5 rounded bg-white/10">GET /products</code>, <code class="px-1 py-0.5 rounded bg-white/10">PUT /products/:id</code>, <code class="px-1 py-0.5 rounded bg-white/10">DELETE /products/:id</code>, <code class="px-1 py-0.5 rounded bg-white/10">POST /orders</code>, <code class="px-1 py-0.5 rounded bg-white/10">PUT /orders/:id/status</code>.</div>
+                  </div>
+                  <div class="col-span-2">
+                    <label class="text-xs text-slate-300/90" for="stCfTok">Token (Bearer)</label>
+                    <input id="stCfTok" value="${escapeAttr(s.cloudflare?.token || '')}" placeholder="opsional" class="mt-1 w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-indigo-500/40" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-3 text-[11px] text-slate-300/90">Aplikasi memakai cache lokal + retry backoff untuk stabilitas saat jaringan naik-turun.</div>
+            </div>
+
+            <div class="flex gap-2">
+              <button type="submit" class="tap lift flex-1 rounded-2xl px-4 py-4 bg-gradient-to-br from-indigo-500 to-emerald-400 text-slate-950 font-semibold">Simpan</button>
+              <button type="button" id="btnCloseSettings" class="tap lift rounded-2xl px-4 py-4 bg-white/5 border border-white/10 font-semibold">Tutup</button>
+            </div>
+          </form>
+        `,
+        onMount(){
+          const modeSel = $('#stMode');
+          const updateBoxes = () => {
+            $('#firebaseBox').classList.toggle('hidden', modeSel.value !== 'firebase');
+            $('#cloudflareBox').classList.toggle('hidden', modeSel.value !== 'cloudflare');
+          };
+          updateBoxes();
+          modeSel.onchange = updateBoxes;
+
+          $('#btnCloseSettings').onclick = () => closeModal();
+
+          $('#frmSettings').onsubmit = async (e) => {
+            e.preventDefault();
+            store.settings.waNumber = normalizePhone($('#stWa').value) || normalizePhone(store.settings.waNumber);
+            store.settings.adminPin = String($('#stPin').value || '').trim() || store.settings.adminPin;
+            store.settings.syncMode = $('#stMode').value;
+
+            store.settings.firebaseConfig = $('#stFb') ? $('#stFb').value.trim() : store.settings.firebaseConfig;
+            store.settings.firestoreCollections = {
+              products: $('#stColP') ? $('#stColP').value.trim() || 'products' : (store.settings.firestoreCollections?.products || 'products'),
+              orders: $('#stColO') ? $('#stColO').value.trim() || 'orders' : (store.settings.firestoreCollections?.orders || 'orders')
+            };
+
+            store.settings.cloudflare = {
+              endpoint: $('#stCfEnd') ? $('#stCfEnd').value.trim() : (store.settings.cloudflare?.endpoint || ''),
+              token: $('#stCfTok') ? $('#stCfTok').value.trim() : (store.settings.cloudflare?.token || '')
+            };
+
+            save('settings');
+            $('#homeNotice').classList.toggle('hidden', store.settings.syncMode !== 'local');
+            await backend.init();
+            toast('Pengaturan disimpan.');
+            closeModal();
+          };
+        }
+      });
+    }
+
+    // ---------- Events wiring ----------
+    function wire(){
+      // Nav
+      $$('.navBtn').forEach(b => {
+        b.onclick = () => setRoute(b.dataset.route);
+      });
+
+      // Category
+      $$('.catBtn').forEach(b => {
+        b.onclick = () => {
+          store.category = b.dataset.cat;
+          $$('.catBtn').forEach(x => x.classList.remove('ring-glow'));
+          b.classList.add('ring-glow');
+          renderHome();
+        };
+      });
+
+      // Search
+      $('#btnSearch').onclick = () => {
+        const row = $('#searchRow');
+        row.classList.toggle('hidden');
+        if (!row.classList.contains('hidden')) {
+          $('#inpSearch').focus();
+        }
+      };
+      $('#btnClearSearch').onclick = () => {
+        store.query = '';
+        $('#inpSearch').value = '';
+        renderHome();
+      };
+      $('#inpSearch').addEventListener('input', (e) => {
+        store.query = e.target.value;
+        renderHome();
+      });
+
+      // Refresh / sync
+      $('#btnRefresh').onclick = async () => {
+        await backend.pull();
+      };
+
+      // Cart actions
+      $('#btnClearCart').onclick = () => {
+        store.cart = {};
+        save('cart');
+        renderCart();
+        renderHome();
+        toast('Keranjang dikosongkan.');
+      };
+      $('#btnCheckout').onclick = () => openCheckout();
+
+      // Orders
+      $('#btnTrack').onclick = () => {
+        renderOrders();
+        toast('Menampilkan order sesuai nomor.');
+      };
+      $('#inpTrackPhone').addEventListener('input', () => {
+        // lightweight live filtering
+        renderOrders();
+      });
+
+      // Admin
+      $('#btnAdminUnlock').onclick = () => {
+        const pin = String($('#inpAdminPin').value || '').trim();
+        if (pin && pin === String(store.settings.adminPin)) {
+          store.adminUnlocked = true;
+          save('admin');
+          toast('Admin aktif.');
+          renderAdmin();
+        } else {
+          toast('PIN salah.');
+        }
+      };
+      $('#btnAdminLock').onclick = () => {
+        store.adminUnlocked = false;
+        store.adminSelectMode = false;
+        adminClearSelection();
+        save('admin');
+        toast('Admin dikunci.');
+        renderAdmin();
+      };
+      $('#btnAddProduct').onclick = () => openProductEditor(null);
+
+      // Admin maintain
+      const btnMaintain = $('#btnAdminMaintain');
+      if (btnMaintain) btnMaintain.onclick = () => {
+        store.adminSelectMode = !store.adminSelectMode;
+        if (!store.adminSelectMode) adminClearSelection();
+        renderAdmin();
+        toast(store.adminSelectMode ? 'Maintain: pilih produk.' : 'Maintain selesai.');
+      };
+      const btnExit = $('#btnAdminExitMaintain');
+      if (btnExit) btnExit.onclick = () => {
+        store.adminSelectMode = false;
+        adminClearSelection();
+        renderAdmin();
+      };
+      const btnSelAll = $('#btnAdminSelectAll');
+      if (btnSelAll) btnSelAll.onclick = () => adminSelectAllVisible();
+      const btnClearSel = $('#btnAdminClearSel');
+      if (btnClearSel) btnClearSel.onclick = () => { adminClearSelection(); renderAdmin(); };
+      const btnBulkDel = $('#btnAdminBulkDelete');
+      if (btnBulkDel) btnBulkDel.onclick = () => adminBulkDelete();
+      const btnBulkDup = $('#btnAdminBulkDuplicate');
+      if (btnBulkDup) btnBulkDup.onclick = () => adminBulkDuplicate();
+
+      $('#btnAdminReloadOrders').onclick = async () => {
+        if (store.settings.syncMode === 'firebase') { toast('Realtime Firebase aktif.'); return; }
+        await backend.pull();
+      };
+
+      // Settings
+      $('#btnSettings').onclick = () => openSettings();
+
+      // Modal close
+      $('#modalOverlay').addEventListener('click', (e) => {
+        const t = e.target;
+        if (t?.dataset?.close === 'overlay' || t?.dataset?.close === 'x') closeModal();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeModal();
+      });
+
+      // Online/offline
+      window.addEventListener('online', () => {
+        store.net.online = true;
+        setSyncIndicator(store.settings.syncMode, true);
+        toast('Online kembali.');
+      });
+      window.addEventListener('offline', () => {
+        store.net.online = false;
+        setSyncIndicator(store.settings.syncMode, false);
+        toast('Offline. Menggunakan cache.');
+      });
+    }
+
+    // ---------- Boot ----------
+    (async function init(){
+      loadAll();
+      wire();
+      setRoute('home');
+      renderCart();
+      renderOrders();
+      renderAdmin();
+
+      await backend.init();
+
+      // Preselect "Semua" glow
+      const first = $(`[data-cat="${store.category}"]`);
+      if (first) first.classList.add('ring-glow');
+
+      // If hash route set
+      const hash = location.hash.replace('#','').trim();
+      if (['home','cart','orders','admin','help'].includes(hash)) setRoute(hash);
+      window.addEventListener('hashchange', () => {
+        const r = location.hash.replace('#','').trim();
+        if (['home','cart','orders','admin','help'].includes(r)) setRoute(r);
+      });
+    })();
+  </script>
+</body>
+</html>
